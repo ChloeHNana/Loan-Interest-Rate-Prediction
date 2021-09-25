@@ -1,0 +1,324 @@
+The goal of this project is to use machine learning/statistical models in Python to predict the interest rate assigned to an individual loan. Looking through the Metadata file, X1 is the interest rate. The knowledge about features impacting the interest rate, could from the applicants' profile, the reason for applying, and the basic interest rate which could be determined by the time and location.
+
+!pip install category_encoders
+!pip install xgboost
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.graph_objects as go ## take in data as parameters and manipulate data before pass in
+import plotly.express as px ##takes df in as a parameter and use other parameters to manipulate the columns
+from sklearn.linear_model import LinearRegression
+
+#Reset the size of chart (Plt)
+fig_size = plt.rcParams["figure.figsize"]
+fig_size[0] = 12
+fig_size[1] = 8
+plt.rcParams["figure.figsize"] = fig_size
+
+df=pd.read_csv(r'/content/drive/MyDrive/Loan Interest Rate Prediction/Data for Cleaning _ Modeling.csv')
+df.head()
+** Clean Data and Retain the Possible features with Quanlity Analysis **
+# Because the loan interest rate is the target column, drop all rows without value in the X1
+df=df.dropna(subset=['X1'])
+# Clean X12 (Home ownership status) with replacing NaN as Other 
+# Clean X13 (Annual income) with replacing NaN with 0
+# Clean X11 (Number of years employed) with replacing NaN with 0
+df['X12']=df['X12'].fillna('OTHER')
+df['X13']=df['X13'].fillna(0)
+df['X11']=df['X11'].fillna(0)
+
+# Test correlation with features highly related from the contains
+# 1. X4 (Loan amount requested) and X5 (Loan amount funded)
+df['X4'] = df['X4'].str.replace('$', '')
+df['X4'] = df['X4'].str.replace(',', '')
+df['X4']=df['X4'].fillna(0)
+df['X4'] = df['X4'].astype(int) 
+df['X5'] = df['X5'].str.replace('$', '')
+df['X5'] = df['X5'].str.replace(',', '')
+df['X5']=df['X5'].fillna(0)
+df['X5'] = df['X5'].astype(int)
+df.plot.scatter(x='X4', y='X5')
+# The X4 is highly positive correlated with X5, only keep X5 which disclose the loan actually issued
+
+# X10 is less meaningful, because it is self-filled by borrowers, 
+# also what reflected in this column also could get idea from employment years and annual salary
+# X14 the reason from borrowers are highly diversified and the Loan Category could also reflect
+# X19 the first 3 digits of zip code shows the conty (State), which could be approximated by State
+
+# X22-31 show the credit status of the borrowers, and most of the data point is 0
+# Becasue the credit recorde is important for lender to determine the Interest rate
+# I would like to use PCA to reduce demensions and select out features more representitive
+credit_df=df[['X22','X28','X29']]
+credit_df=credit_df.dropna()
+
+** Apply PCA **
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+import matplotlib.pyplot as plt
+
+
+scaler = StandardScaler()
+pca = PCA()
+pipeline = make_pipeline(scaler, pca)
+pipeline.fit(credit_df)
+
+# Plot the explained variances
+features = range(pca.n_components_)
+plt.bar(features, pca.explained_variance_)
+plt.xlabel('PCA feature')
+plt.ylabel('variance')
+plt.xticks(features)
+plt.show()
+---From the plot, we could not effectively reduce dimention with PCA, also because the size of data, t_SEN didn't work well---
+
+#Drop all features without relatively strong impacts on loan interest rates after quality analysis, 
+#and features which have strong correlation with other features on contains
+fin_df=df.drop(columns = ['X2','X3','X4','X10','X14', 'X15','X16','X18','X19','X20','X23','X24','X25','X26','X27','X30','X31','X32'])
+fin_df.info()
+
+# Look at the portion of NaN in Loan grade in Whole dataset
+sum(fin_df['X8'].isnull())/len(fin_df['X8'])
+# Because the Loan grade is an important feature in determining the loan interest, 
+# the grade is an ordered categorical data, which is hard to fill with a reasonable value
+# also in the testing dataset, all record with a loan grade
+# Drop rows have NaN in X8
+fin_df=fin_df.dropna(subset=['X8'])
+fin_df.info()
+
+# Name colums with more meaningful label
+fin_df = fin_df.rename(columns = {'X1':'R','X5':'Fund_Amt','X6':'Investor_Amt','X7':'N_Payment','X8':'Grade','X9':'Subgrade','X11':'Emp_Y','X12':'Home','X13':'A_Payment','X17':'Loan_Cat','X21':'Income_Pt','X22':'Pass_Due','X28':'Derogatory','X29':'Credit_Bl'})
+fin_df.head()
+
+# Standardize data for manipulate
+# Numerical Data
+type(fin_df.R[0])
+fin_df['R'] = fin_df['R'].str.replace('%', '')
+fin_df['R'] = round(fin_df['R'].astype(float),3)
+fin_df['Investor_Amt'] =fin_df['Investor_Amt'].str.replace('$', '')
+fin_df['Investor_Amt'] =fin_df['Investor_Amt'].str.replace(',', '')
+fin_df['Investor_Amt'] = fin_df['Investor_Amt'].astype(int) 
+# Because the investors always require higher R than institute, the portion of loan from investors could influence on the final R
+fin_df['Investor_Pct']=round(fin_df['Investor_Amt']/fin_df['Fund_Amt'],4)
+fin_df=fin_df.drop(['Investor_Amt'],axis=1)
+
+# Standardize data for manipulate
+# Categorical Data Data
+fin_df['N_Payment'].unique() # For the N_Payment, only two choices and the longer period could indicate higher interest rate
+fin_df['Long_Term']=fin_df['N_Payment'].apply(lambda x:1 if x==' 60 months' else 0)
+fin_df=fin_df.drop(['N_Payment'],axis=1)
+fin_df.head(5)
+
+fin_df['R'].describe()
+#Look at how loan grade related to the R
+fig = px.box(fin_df, x="Grade", y="R",category_orders={'Grade':["A","B","C","D","E","F","G"]})
+fig.show()
+
+From the plot, we could see, in general, according to the alphabetical order, the higher the Grade, the higher R. It means that the loans in A Grade more likely to have a lower interest rate. But, this rule is not strictly followed. I did the same thing to Subgrade, however, the plot led to further confusion. Then, I decided to apply the median in each subgrade group to see if it is more reasonable.
+
+sorted_sub=sorted(fin_df['Subgrade'])
+median_R=fin_df.groupby(['Subgrade'])['R'].apply(np.median)
+plt.plot(median_R)
+
+From this plot, we could conclude that along with the sorted subgrade, the R goes higher. Because the line is smooth, I considered should I transfer the subgrade (Grade) to be an ordered categorical feature. Also, because the grade could be determined by other features, it could be removed when I work on the prediction model.
+The feature Employment Year, Home Ownership Status, Annual Payment, and the ratio of debt payment to monthly salary are all describing the ability to service debt.
+
+# Plot to indicate how these four features correlated with each others
+# Creat a set_df only contains feature reflect the borrowers profile
+prof_df=fin_df.loc[:,['R','Emp_Y','Home','A_Payment','Income_Pt']]
+prof_df['A_Payment'].describe()
+# From the stats description of the Annual Payment, divide all annual payment with 10^3 to lower its value
+prof_df['A_Payment']=prof_df['A_Payment']/1000
+fig = px.box(prof_df, y="A_Payment")
+fig.show()
+# From this pair plot we could see that the lower annual payment, the larger the monthly payback occupy on the incomes
+
+# To have a better view on main body of data, filter data with 25th-75th percentile on Annual Payment
+AP_25=prof_df.A_Payment.quantile(0.25)
+AP_75=prof_df.A_Payment.quantile(0.75)
+iqr=AP_75-AP_25
+fence_low  = AP_25-1.5*iqr
+fence_high = AP_75+1.5*iqr
+fin_prof_df=prof_df[(prof_df.A_Payment>0 ) & (prof_df.A_Payment <AP_75)]
+fin_prof_df['A_Payment'].hist()
+# From this histogram, we could read the distribution of Annual Payment
+# plt.plot(fin_prof_df['A_Payment'],fin_prof_df['R'])
+
+# Because its hard to plot correlation between R and Annual Payment in the main part
+X = fin_prof_df.A_Payment.values.reshape(-1, 1)
+model = LinearRegression()
+model.fit(X, fin_prof_df.R)
+x_range = np.linspace(X.min(), X.max(), 10)
+y_range = model.predict(x_range.reshape(-1, 1))
+fig = px.scatter(fin_prof_df, x='A_Payment', y='R', opacity=0.9)
+fig.add_traces(go.Scatter(x=x_range, y=y_range, name='Regression Fit'))
+fig.show()
+# With Apply linear regression, we could see that the R is negative correlated with Annual Payment
+
+# Plot a more simplified chart and figure out if the extreme high annual income will make influence on R
+# Ignore the futhest outliers, which count is 32 in the 70984 records
+High_prof_df=prof_df[(prof_df.A_Payment >AP_75)]
+len(High_prof_df['A_Payment'])
+len(High_prof_df['A_Payment'][(High_prof_df.A_Payment >1000)])
+Highfin_prof_df=High_prof_df[(High_prof_df.A_Payment <1000)]
+Highfin_prof_df['A_Payment'].hist()
+
+# Use linear model to fit the high income set
+X = Highfin_prof_df.A_Payment.values.reshape(-1, 1)
+model = LinearRegression()
+model.fit(X, Highfin_prof_df.R)
+x_range = np.linspace(X.min(), X.max(), 10)
+y_range = model.predict(x_range.reshape(-1, 1))
+fig = px.scatter(Highfin_prof_df, x='A_Payment', y='R', opacity=0.9)
+fig.add_traces(go.Scatter(x=x_range, y=y_range, name='Regression Fit'))
+fig.show()
+
+From these two linear regression models, we could see when the annual income is higher than the 75th percentile of all borrowers, it makes less impact on the interest rate when it lower than the threshold. So, I create a dummy variable "Low_Income", which will equal 1 when the borrowers' salary is lower than the 75th percentile of borrowers annual income.
+
+fin_df['Low_Income']=fin_df['A_Payment'].apply(lambda x:1 if (x/1000)<=AP_75 else 0)
+
+Also, I wondered if the Annual payment will make an impact on loan grade.From the plots below, it is hard to conclude any rules between Annual Payment and Loan Grade.
+
+median_AP=fin_df.groupby(['Subgrade'])['A_Payment'].apply(np.median)
+plt.plot(median_AP)
+
+sorted_sub=sorted(fin_df['Subgrade'])
+fig = px.box(fin_df, x="Subgrade", y="A_Payment",category_orders={'Subgrade':sorted_sub})
+fig.show()
+
+# Do similar analysis analysis to Income Ratio
+fig = px.box(prof_df, y="Income_Pt")
+fig.show()
+
+# Because the Income Percentage is not extreme corowded in lower or higher range
+X = prof_df.Income_Pt.values.reshape(-1, 1)
+model = LinearRegression()
+model.fit(X, prof_df.R)
+x_range = np.linspace(X.min(), X.max(), 10)
+y_range = model.predict(x_range.reshape(-1, 1))
+fig = px.scatter(prof_df, x='Income_Pt', y='R', opacity=0.9)
+fig.add_traces(go.Scatter(x=x_range, y=y_range, name='Regression Fit'))
+fig.show()
+# In general, the income percentage is positive related to the R
+
+sorted_sub=sorted(fin_df['Subgrade'])
+fig = px.box(fin_df, x="Subgrade", y="Income_Pt",category_orders={'Subgrade':sorted_sub})
+fig.show()
+
+median_IP=fin_df.groupby(['Subgrade'])['Income_Pt'].apply(np.median)
+plt.plot(median_IP)
+From the plots above, we could see that the Income Ratio is correlated with loan grade.
+
+#Look at how Employment Year related to the R
+fig = px.box(fin_df, x="Emp_Y", y="R")
+fig.show()
+#Look at how Home Ownership Status related to the R
+fig = px.box(fin_df, x="Home", y="R")
+fig.show()
+It seems that these two features do not make indirect impacts on R. Let's see if they are making impacts on Loan Grade.
+
+def two_cate_graph(data,bar_var,stack_var):
+    fig=px.histogram(data,x=bar_var,color=stack_var)
+    fig.update_xaxes(categoryorder='total descending')
+    fig.show()
+    return
+fin_df['Emp_Y'].value_counts()
+
+fig=px.density_heatmap(fin_df,x='Emp_Y',y='Grade',category_orders={'Grade':["A","B","C","D","E","F","G"]},
+                      labels={
+                     "Emp_Y": "Year",
+                     "Grade": "Grade"
+                 },
+                title="Employment Year vs. Grade")
+fig.show()
+
+two_cate_graph(fin_df,"Emp_Y","Grade")
+fin_df['Home'].value_counts()
+two_cate_graph(fin_df,"Home","Grade")
+fin_df['Loan_Cat'].value_counts()
+two_cate_graph(fin_df,"Loan_Cat","Grade")
+
+By now, I could conclude that the Employment Year, Home Ownership, and Loan Category do not have an obvious correlation with Loan Grade. Then, I will transform these categorical variables into numerical variables.
+
+# Employment Year 
+# For this feature, the categories are ordered, even though we know that the '10+ year' contain many diversified situations,
+# without further information, I will write it as 10 and '<1 year' as 0
+fin_df['Emp_Y'] = fin_df['Emp_Y'].str.replace('year', '')
+fin_df['Emp_Y'] = fin_df['Emp_Y'].str.replace('< 1', '0')
+fin_df['Emp_Y'] = fin_df['Emp_Y'].str.replace('+', '')
+fin_df['Emp_Y'] = fin_df['Emp_Y'].str.replace('s', '')
+fin_df['Emp_Y'] = fin_df['Emp_Y'].fillna(0)
+fin_df['Emp_Y'] = fin_df['Emp_Y'].astype(int) 
+fin_df['Emp_Y'].describe()
+
+fin_df['Home'] = fin_df['Home'].str.replace('ANY', 'OTHER')
+fin_df['Home'] = fin_df['Home'].str.replace('NONE', 'OTHER')
+fin_df['Home'].value_counts()
+
+# Dummy the Home feature
+finD_df=pd.get_dummies(fin_df, columns=['Home'])
+finD_df.head()
+
+To better endoce the Loan Category which has many categories, I will like to see its correlation with R at first.
+
+mean_LC=fin_df.groupby(['Loan_Cat'])['R'].apply(np.mean)
+# Because the Subgrade is more representitve than Grade. Drop the Subgrade
+finD_df=finD_df.drop(columns = ['Grade'])
+finD_df.info()
+
+*** Build Models ***
+y=finD_df.R
+X=finD_df.drop(columns = ['R'])
+
+# split data into training and testing
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# To Encode the categorical data with many cats (Subgrade and Loan_Cat)
+from category_encoders import TargetEncoder
+encoder = TargetEncoder(cols=['Subgrade','Loan_Cat'], 
+                        handle_unknown='value',  
+                        handle_missing='value').fit(X_train,y_train)
+encoded_train = encoder.transform(X_train)
+encoded_test = encoder.transform(X_test)
+encoded_train.head(5)
+
+# Import Models
+from sklearn.linear_model import LinearRegression
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import Ridge
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.tree import ExtraTreeRegressor
+from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import AdaBoostRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import BaggingRegressor
+# Valuation
+from sklearn.metrics import mean_squared_error as MSE
+
+models=[LinearRegression(),KNeighborsRegressor(),Ridge(),Lasso(),DecisionTreeRegressor(),ExtraTreeRegressor(),XGBRegressor(),RandomForestRegressor(),AdaBoostRegressor(),GradientBoostingRegressor(),BaggingRegressor()]
+models_str=['LinearRegression','KNNRegressor','Ridge','Lasso','DecisionTree','ExtraTree','XGBoost','RandomForest','AdaBoost','GradientBoost','Bagging']
+rmse_=[]
+score_=[]
+
+for name,model in zip(models_str,models):
+    model=model   
+    model.fit(encoded_train,y_train)
+    y_pred=model.predict(encoded_test)  
+    rmse=MSE(y_test, y_pred)**(1/2)
+    rmse_.append(str(rmse)[:5])
+    score=model.score(encoded_test,y_test)
+    score_.append(str(score)[:5])
+    print(name +' RMSE:'+str(rmse))
+    print(name +' Score:'+str(score))
+
+Model_Valuation=pd.DataFrame()
+Model_Valuation['Model']=models_str
+Model_Valuation['RMSE']=rmse_
+Model_Valuation['Score']=score_
+Model_Valuation.sort_values(by='Score',ascending=False)
+
+From the table above, we could conclude that the top three Models are XGBoost, GradientBoost, and RandomForest. All of them are ensemble learning models. For the KNNRegressor model which with a negative score, the reason behind this score is this model requires to standardize numerical predictors which were not provided. I will use the best model to predict R in the "Holdout for Testing" file.
