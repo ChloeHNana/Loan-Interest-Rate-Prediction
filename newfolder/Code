@@ -1,0 +1,450 @@
+*** EDA ***
+import pandas as pd
+import numpy as np 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# import data
+df = pd.read_csv(r'/content/drive/MyDrive/Colab Notebooks/data_for_EDA.csv')
+For the simplicity and readability of EDA, we use the data_for_EDA which does not convert all categorical variable to the dummy variable compared with cleaning dataset.
+
+--- Location ---
+plt.figure(figsize = (20,8),dpi = 80)
+sns.scatterplot(x='Start_Lng',y = 'Start_Lat',data = df,palette='Accent')
+plt.title('Distribution of Accidents')
+plt.show()
+
+--- Others ---
+# An overview towards the dataset
+# Distribution of the target variable -- Severity
+# Most severity of car accidents are 2
+sns.countplot(x='Severity', data=df)
+
+# Countplot of state 
+# California has the the most number of car accidents
+df.State.value_counts().plot(kind='bar',figsize=(12, 6))
+plt.ylabel('# of Accidents')
+plt.legend(loc='best')
+
+# Countplot of top 20 zipcodes
+zipcode = df.Zipcode.value_counts()
+top_20_zipcode = zipcode.head(20)
+
+top_20_zipcode.plot(kind='bar',figsize=(12, 6))
+plt.ylabel('# of Accidents')
+plt.legend(loc='best')
+
+# Pie Chart of Timezone
+# Timezone US/Eastern occupies 46.05% car accidents
+df['Timezone'].value_counts().plot.pie(figsize=(6, 6), autopct='%.2f')
+
+# Countplot of TMC
+df.TMC.value_counts().plot(kind='barh',figsize=(12, 6),color='Grey')
+plt.ylabel('# of Accidents')
+df.TMC.unique()
+plt.legend(loc='best')
+
+# Analysis towards dummy variable
+df.select_dtypes(['int64']).head()
+
+# Distribution of some key dummy variables
+# Most car accidents happen at right side and not clear days without traffic signal, crossing and junction
+_, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8))
+
+sns.countplot(x='Cloud', data=df, ax=axes[0,0])
+sns.countplot(x='Crossing', data=df, ax=axes[0,1])
+sns.countplot(x='Junction', data=df, ax=axes[0,2])
+sns.countplot(x='Traffic_Signal', data=df, ax=axes[1,0])
+sns.countplot(x='Side', data=df, ax=axes[1,1])
+sns.countplot(x='Clear', data=df, ax=axes[1,2])
+
+# Analysis towards numeric variable
+df.select_dtypes(['float64']).head()
+
+# Correlation of the numerical variables
+data = pd.DataFrame(df,columns=['Start_Lat','Start_Lng','Distance(mi)','Temperature(F)','Humidity(%)','Pressure(in)',
+                'Wind_Speed(mph)','process_time'])
+
+corrMatrix = data.corr()
+sns.heatmap(corrMatrix,annot=True)
+plt.show()
+
+data1['Nautical_Twilight'] = data1['Nautical_Twilight'].replace({'Day':1,'Night':0})
+data1['Civil_Twilight'] = data1['Civil_Twilight'].replace({'Day':1,'Night':0})
+data1['Sunrise_Sunset'] = data1['Sunrise_Sunset'].replace({'Day':1,'Night':0})
+data1['Astronomical_Twilight'] = data1['Astronomical_Twilight'].replace({'Day':1,'Night':0})
+
+sns.heatmap(data1[['Sunrise_Sunset','Civil_Twilight','Nautical_Twilight','Astronomical_Twilight']].corr(),annot=True)
+
+# distplot of Temperature
+# The distribution of temperature is slightly right-skewed
+print(df['Temperature(F)'].describe())
+plt.figure(figsize=(9, 8))
+sns.distplot(df['Temperature(F)'], color='g', bins=100, hist_kws={'alpha': 0.4})
+
+# distplot of Humidity
+# The distribution of Humidity is left-skewed
+print(df['Humidity(%)'].describe())
+plt.figure(figsize=(9, 8))
+sns.distplot(df['Humidity(%)'], color='y', hist_kws={'alpha': 0.4})
+
+# distplot of Wind_Speed
+# The distribution of Wind_Speed is highly right-skewed
+print(df['Wind_Speed(mph)'].describe())
+plt.figure(figsize=(9, 8))
+sns.distplot(df['Wind_Speed(mph)'], color='b', hist_kws={'alpha': 0.4})
+
+# distplot of Distance
+# The distribution of distance is highly right-skewed
+print(df['Distance(mi)'].describe())
+plt.figure(figsize=(9, 8))
+sns.distplot(df['Distance(mi)'], color='r', hist_kws={'alpha': 0.4})
+
+*** Data Clean and Transformation ***
+# Import libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import folium
+import math
+%matplotlib inline
+pd.set_option('display.max_rows', 200)
+pd.set_option('display.max_columns', 200)
+plt.style.use('ggplot')
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_selection import SelectFromModel
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_curve, auc
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+
+# we have tried to fill data with mean,median and mode and train the model.But the model performed bad
+# Meanwhile, filling feature like temperature and humidity with mean or median made no sense, since different location have differnet weather
+# It's unrealistic to fill the nan value in such a dataset. So we choose to drop these records.
+# after dropping, there are still about 2 million records left. And we think it's enough for us to train the model.
+data1 = data1.drop(columns = ['Description','Airport_Code'])
+data1.dropna(subset=data1.columns[data1.isnull().mean()!=0], how='any', axis=0, inplace=True)
+
+--- Categorical Feature Transformation ---
+#1. boolean traffic features
+# drop 100% True features
+new_data = new_data.drop(columns = ['Bump','Give_Way','No_Exit','Roundabout','Traffic_Calming','Turning_Loop'])
+# transfer other bollean features to 0 or 1
+bl = ['Amenity','Crossing','Junction','Railway','Station','Stop','Traffic_Signal']
+new_data[bl] = new_data[bl]*1
+#2. no order categorical features
+#side
+new_data['Side'] =new_data['Side'].replace({'R':1,'L':0,' ':1})
+#wind_direction
+new_data.loc[new_data['Wind_Direction']=='Calm','Wind_Direction'] = 'CALM'
+
+new_data.loc[(new_data['Wind_Direction']=='West')|(new_data['Wind_Direction']=='WSW')
+             |(new_data['Wind_Direction']=='WNW'),'Wind_Direction'] = 'W'
+
+new_data.loc[(new_data['Wind_Direction']=='South')|(new_data['Wind_Direction']=='SSW')
+       |(new_data['Wind_Direction']=='SSE'),'Wind_Direction'] = 'S'
+
+new_data.loc[(new_data['Wind_Direction']=='North')|(new_data['Wind_Direction']=='NNW')
+       |(new_data['Wind_Direction']=='NNE'),'Wind_Direction'] = 'N'
+
+new_data.loc[(new_data['Wind_Direction']=='East')|(new_data['Wind_Direction']=='ESE')
+       |(new_data['Wind_Direction']=='ENE'),'Wind_Direction'] = 'E'
+new_data.loc[new_data['Wind_Direction']=='Variable','Wind_Direction'] = 'VAR'
+#weather_condition
+new_data['Clear'] = np.where(new_data['Weather_Condition'].str.contains('Clear|Fair', case=False, na = False), 1, 0)
+new_data['Cloud'] = np.where(new_data['Weather_Condition'].str.contains('Cloud|Overcast|Cloudy|Clouds', case=False, na = False), 1, 0)
+new_data['Rain'] = np.where(new_data['Weather_Condition'].str.contains('Rain|storm', case=False, na = False),1, 0)
+new_data['Heavy_Rain'] = np.where(new_data['Weather_Condition'].str.contains('Heavy Rain|Shower|Showers|T-Storm|Thunderstorms', case=False, na = False), 1,0)
+new_data['Snow'] = np.where(new_data['Weather_Condition'].str.contains('Snow|Sleet|Ice|Wintry Mix', case=False, na = False),1, 0)
+new_data['Heavy_Snow'] = np.where(new_data['Weather_Condition'].str.contains('Heavy Snow|Snow Showers', case=False, na = False), 1, 0)
+new_data['Fog'] = np.where(new_data['Weather_Condition'].str.contains('Fog', case=False, na = False), 1, 0)
+new_data['Windy'] = np.where(new_data['Weather_Condition'].str.contains('Windy', case=False, na = False),1, 0)
+new_data['Smoke'] = np.where(new_data['Weather_Condition'].str.contains('Smoke', case=False, na = False),1, 0)
+new_data['Sand'] = np.where(new_data['Weather_Condition'].str.contains('Dust|Sand|dust|Ash', case=False, na = False), 1, 0)
+new_data['Sleet'] = np.where(new_data['Weather_Condition'].str.contains('Sleet|Ice Pellets|Squalls|Hail', case=False, na = False),1, 0)
+new_data['Drizzle'] = np.where(new_data['Weather_Condition'].str.contains('Drizzle', case=False, na = False),1, 0)
+new_data['Haze'] = np.where(new_data['Weather_Condition'].str.contains('Haze|Mist', case=False, na = False),1, 0)
+new_data['Thunder'] = np.where(new_data['Weather_Condition'].str.contains('Thunder|Thunders|Thunderstorms|Thunderstorm', case=False, na = False),1, 0)
+new_data = new_data.drop(columns = ['Weather_Condition','Wind_Direction'])
+
+# location feature transformation
+new_data['Zipcode'] = new_data['Zipcode'].str[:5].astype(int)
+
+# time feature transformation
+new_data['Start_Time'] = pd.to_datetime(new_data['Start_Time'])
+new_data['End_Time'] = pd.to_datetime(new_data['End_Time'])
+# drop weather_timestamp
+new_data=new_data.drop(columns = ['Weather_Timestamp'])
+# create processing time
+new_data['process_time'] = ((new_data['End_Time']-new_data['Start_Time'])/np.timedelta64(1, "s"))/60 
+new_data = new_data.drop(columns = ['End_Time'])
+# Add hour,day month and year
+temp=pd.DatetimeIndex(new_data['Start_Time'])
+new_data['Start_date']=temp.date
+new_data['Start_time']=temp.time
+new_data['hour']=pd.to_datetime(new_data.Start_time,format="%H:%M:%S")
+new_data['hour']=pd.Index(new_data["hour"]).hour
+new_data = new_data.drop(columns = ['Start_time'])
+new_data['Day']=pd.DatetimeIndex(new_data.Start_date).day
+new_data['Month']=pd.DatetimeIndex(new_data.Start_date).month
+new_data['Year']=pd.DatetimeIndex(new_data.Start_date).year
+new_data = new_data.drop(columns = ['Start_date'])
+# daylight
+new_data['Nautical_Twilight'] = new_data['Nautical_Twilight'].replace({'Day':1,'Night':0})
+new_data['Civil_Twilight'] = new_data['Civil_Twilight'].replace({'Day':1,'Night':0})
+new_data['Sunrise_Sunset'] = new_data['Sunrise_Sunset'].replace({'Day':1,'Night':0})
+new_data['Astronomical_Twilight'] = new_data['Astronomical_Twilight'].replace({'Day':1,'Night':0})
+
+# correlation
+# the daylight columns are correlated, so delete the correlation features
+new_data = new_data.drop(columns=['Civil_Twilight','Nautical_Twilight','Astronomical_Twilight'])
+
+# detect the outlier
+plt.scatter(new_data['process_time'],new_data['Distance(mi)'])
+plt.title('Scatter Plot between Distance and process_time')
+plt.xlabel('process_time')
+plt.ylabel('Distance')
+
+new_data[new_data['process_time']> 100000] #A-579624
+
+# no order categorial features-get dummuies
+#(state are too much values, so get label code)
+new = new_data
+new['State']= new['State'].astype('category').cat.codes
+categorical_features = new.select_dtypes(include = ["object"]).columns
+numerical_features = new.select_dtypes(exclude = ["object"]).columns
+num = new[numerical_features]
+cat = new[categorical_features]
+cat = pd.get_dummies(cat, drop_first=True)
+new = pd.concat([num, cat], axis = 1)
+
+*** Model Prediction for Severity ***
+Assumption: applying models to data clusteredd by location might improve the prediction accuracy.
+We choose to apply model for all state then apply models in clusterd location and specific states to see if there is some improvement.
+
+--- For All State Data ---
+m_data = m_data[m_data['Distance(mi)']<=50]
+m_data.index = m_data['ID']
+m_data = m_data.drop('ID',axis = 1)
+m_data.shape
+
+plt.hist(m_data['Severity'],color='green')
+plt.title('Distribution of severity')
+plt.xlabel('Severity')
+plt.ylabel('Count')
+
+m_data['Severity'].value_counts()
+
+p_m = m_data['process_time'].groupby(m_data['Severity']).mean()
+from matplotlib.pyplot import cm
+fig = plt.plot(figsize = (30,20))
+p_m.plot.barh(color = 'skyblue')
+plt.xlabel('process_time mean')
+
+d_m = m_data['Distance(mi)'].groupby(m_data['Severity']).mean()
+from matplotlib.pyplot import cm
+fig = plt.plot(figsize = (30,20))
+d_m.plot.barh(color = 'skyblue')
+plt.xlabel('distance mean')
+
+d_m = m_data['Distance(mi)'].groupby(m_data['Severity']).mean()
+
+fig,ax = plt.subplots(figsize = (30,10))
+ax = sns.violinplot(x="Severity", y="Distance(mi)", data=m_data[m_data['Distance(mi)']<=50])
+
+# try DBSCAN
+from sklearn.cluster import DBSCAN
+db = DBSCAN()
+db.fit(X_train)
+Super imbalanced dependent features, which might influence the prediction.
+
+# oversample 4 and 1 and undersample 2 and 3
+df = m_data.drop('Start_Time',axis = 1)
+from sklearn.utils import resample
+X = pd.concat([X_train, y_train], axis=1)
+c1 = df[df.Severity==1]
+c2 = df[df.Severity==2]
+c3 = df[df.Severity==3]
+c4 = df[df.Severity==4]
+c1_upsampled = resample(c1,
+                          replace=True, # sample with replacement
+                          n_samples=600000, # match number in majority class
+                          random_state=27)
+c4_upsampled = resample(c4,
+                          replace=True, # sample with replacement
+                          n_samples=600000, # match number in majority class
+                          random_state=27)
+c2_downsampled = resample(c2,
+                          replace=True, # sample with replacement
+                          n_samples=600000, # match number in majority class
+                          random_state=27)
+c3_downsampled = resample(c3,
+                          replace=True, # sample with replacement
+                          n_samples=600000, # match number in majority class
+                          random_state=27)
+df = pd.concat([c1_upsampled, c2_downsampled,c3_downsampled,c4_upsampled])
+
+# split data
+df = m_data.drop('Start_Time',axis = 1)
+target='Severity'
+y = df[target]
+X = df.drop(target, axis=1)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=21, stratify=y)
+
+# Decision tree
+dt = DecisionTreeClassifier(max_depth=14, random_state=0)
+dt.fit(X_train, y_train)
+pre = dt.predict(X_test)
+acc = accuracy_score(y_test, pre)
+print("Test set accuracy: {:.2f}".format(acc))
+
+data_sever = df.sample(n=5000)
+fig1 = go.Figure(data=go.Scattergeo(
+        locationmode = 'USA-states',
+        lon = data_sever['Start_Lng'],
+        lat = data_sever['Start_Lat'],
+        text = data_sever['City'],
+        mode = 'markers',
+        marker = dict(
+            size = 8,
+            opacity = 0.8,
+            reversescale = True,
+            autocolorscale = False,
+            symbol = 'circle',
+            line = dict(
+                width=1,
+                color='rgba(102, 102, 102)'
+            ),
+            colorscale = 'Reds',
+            cmin = data_sever['Severity'].max(),
+        color = data_sever['Severity'],
+        cmax = 1,
+            colorbar_title="Severity"
+        )))
+
+fig1.update_layout(
+        title = 'Severity of accidents',
+        geo = dict(
+            scope='usa',
+            projection_type='albers usa',
+            showland = True,
+            landcolor = "rgb(250, 250, 250)",
+            subunitcolor = "rgb(217, 217, 217)",
+            countrycolor = "rgb(217, 217, 217)",
+            countrywidth = 0.7,
+            subunitwidth = 0.7
+        ),
+    )
+
+# Import the packages to get the different performance metrics
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn import metrics
+# Obtain the predictions from our random forest model 
+pre = dt.predict(X_test)
+# Predict probabilities
+# Print the ROC curve, classification report and confusion matrix
+# Print(metrics.roc_auc_score(y_test, probs[:,1]))
+print(metrics.classification_report(y_test, pre))
+
+# cost_function (too memory-cost)
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.tree import DecisionTreeClassifier
+model = DecisionTreeClassifier(class_weight='balanced')
+# define cross-validation
+cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
+# evaluate model
+scores = cross_val_score(model, X, y, scoring='roc_auc', cv=cv, n_jobs=-1)
+print('Mean ROC AUC: %.3f' % mean(scores))
+
+# Random Forest algorithm
+# Create a Gaussian Classifier
+clf=RandomForestClassifier(n_estimators=100)
+#Train the model using the training sets y_pred=clf.predict(X_test)
+clf.fit(X_train,y_train)
+y_pred=clf.predict(X_test)
+# View The Accuracy Of Our Limited Feature Model
+print('[Randon forest algorithm -- Limited feature] accuracy_score: {:.3f}.'.format(accuracy_score(y_test, y_pred)))
+print(metrics.classification_report(y_test, y_pred))
+feature_imp = pd.Series(clf.feature_importances_,index=X.columns).sort_values(ascending=False)
+
+from matplotlib.pyplot import cm
+fig = plt.plot(figsize = (30,20))
+bar = feature_imp.sort_values().tail(10)
+bar.plot.barh(color = iter(cm.rainbow(np.linspace(0,1,10))))
+
+important = ['Start_Lat','Start_Lng','Zipcode','Side','process_time','Traffic_Signal','Pressure(in)','Temperature(F)','Humidity(%)','hour']
+X_important_train = X_train[important]
+X_important_test = X_test[important]
+
+# Create a new random forest classifier for the most important features
+clf_important = RandomForestClassifier(n_estimators=100, random_state=0, n_jobs=-1)
+# Train the new classifier on the new dataset containing the most important features
+clf_important.fit(X_important_train, y_train)
+# Apply The Full Featured Classifier To The Test Data
+y_important_pred = clf_important.predict(X_important_test)
+# View The Accuracy Of Our Limited Feature Model
+print('[Randon forest algorithm -- Limited feature] accuracy_score: {:.3f}.'.format(accuracy_score(y_test, y_important_pred)))
+print(metrics.classification_report(y_test, y_pred))
+
+# SMOTE
+train = pd.concat([X_important_train,y_train],axis = 1)
+test = pd.concat([X_important_test,y_test],axis = 1)
+dt = pd.concat([train,test])
+y = dt['Severity']
+X = dt.drop('Severity',axis = 1)
+from imblearn.over_sampling import SMOTE
+oversample = SMOTE()
+X, y = oversample.fit_resample(X, y)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=21, stratify=y)
+
+clf_important = RandomForestClassifier(n_estimators=100, random_state=0, n_jobs=-1)
+
+# Train the new classifier on the new dataset containing the most important features
+clf_important.fit(X_train, y_train)
+y_pred = clf_important.predict(X_test)
+print(metrics.classification_report(y_test, y_pred))
+
+--- For Specific Cluster ---
+#kmeans cluster
+from sklearn.cluster import MiniBatchKMeans
+def find_clusters(increment):
+    kmeans = MiniBatchKMeans(n_clusters=increment, batch_size=10000,random_state=42).fit(m_data[['Start_Lat','Start_Lng']].values)
+    df['Cluster'] = kmeans.predict(m_data[['Start_Lat','Start_Lng']])
+    cluster_centers = kmeans.cluster_centers_
+    cluster_len = len(cluster_centers)
+    return cluster_centers, cluster_len
+# clustering
+cluster_centers, cluster_len = find_clusters(5)
+
+m = folium.Map(cluster_centers[0])
+for x in cluster_centers:
+  folium.Marker(x).add_to(m)
+
+m_data['position'] = m_data['Start_Lat'].astype(str).str.cat(m_data['Start_Lng'].astype(str),sep = ',')
+pf_t = dict(m_data['position'].value_counts())
+most_risk_point = [i[0]for i in pf_t.items() if i[1]>300]
+
+m = folium.Map(location =[37.808498, -122.366852], zoom_start=8)
+for x in most_risk_point:
+  x = list(map(float,(x).split(',')))
+  folium.Marker(x,popup="Risky-Point",icon=folium.Icon(color = 'green')).add_to(m)
+
+severity_points = m_data[m_data['Severity']==4]['position']
+rp = dict(severity_points.value_counts())
+s_point = [i[0]for i in rp.items() if i[1]>=10]
+
+for x in s_point:
+  x = list(map(float,(x).split(',')))
+  folium.Marker(x,popup="death",icon=folium.Icon(color = 'Red')).add_to(m)
+
