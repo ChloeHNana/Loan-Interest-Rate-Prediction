@@ -322,3 +322,4 @@ Model_Valuation['Score']=score_
 Model_Valuation.sort_values(by='Score',ascending=False)
 
 From the table above, we could conclude that the top three Models are XGBoost, GradientBoost, and RandomForest. All of them are ensemble learning models. For the KNNRegressor model which with a negative score, the reason behind this score is this model requires to standardize numerical predictors which were not provided. I will use the best model to predict R in the "Holdout for Testing" file.
+
