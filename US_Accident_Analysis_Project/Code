@@ -447,4 +447,3 @@ s_point = [i[0]for i in rp.items() if i[1]>=10]
 for x in s_point:
   x = list(map(float,(x).split(',')))
   folium.Marker(x,popup="death",icon=folium.Icon(color = 'Red')).add_to(m)
-
